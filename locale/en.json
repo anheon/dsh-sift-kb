@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Local knowledge base (sift)",
+    "description": "Adds a Knowledge Base panel to the sidebar with native search, full-document reading and a courseware/PDF import flow. The sift server stays off until you start it from the panel or the agent calls the sift_kb tool; on DSH exit the plugin stops only the instance it started, never one you launched yourself. Imports are handed to the courseware-to-sift skill in a new conversation after confirmation, with source files read-only and staged files deleted on success. Requires sift on disk (D:\\sift-venv by default) and a mcp-manager row pointing at the same port.",
+    "detail": "docs/DETAIL.md"
+  }
+}

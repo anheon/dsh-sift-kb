@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300" role="img" aria-label="Local sift knowledge base feeding the assistant">
+  <rect width="640" height="300" fill="#f3f5f9"/>
+
+  <!-- three collections -->
+  <g>
+    <rect x="40" y="52" width="150" height="56" rx="10" fill="#ffffff" stroke="#b7c3d2" stroke-width="1.5"/>
+    <rect x="56" y="68" width="16" height="16" rx="4" fill="#247bbf" opacity="0.85"/>
+    <rect x="82" y="70" width="84" height="5" rx="2.5" fill="#b7c3d2"/>
+    <rect x="82" y="83" width="56" height="5" rx="2.5" fill="#e4edf8"/>
+
+    <rect x="40" y="122" width="150" height="56" rx="10" fill="#ffffff" stroke="#b7c3d2" stroke-width="1.5"/>
+    <rect x="56" y="138" width="16" height="16" rx="4" fill="#247bbf" opacity="0.6"/>
+    <rect x="82" y="140" width="76" height="5" rx="2.5" fill="#b7c3d2"/>
+    <rect x="82" y="153" width="48" height="5" rx="2.5" fill="#e4edf8"/>
+
+    <rect x="40" y="192" width="150" height="56" rx="10" fill="#ffffff" stroke="#b7c3d2" stroke-width="1.5"/>
+    <rect x="56" y="208" width="16" height="16" rx="4" fill="#247bbf" opacity="0.4"/>
+    <rect x="82" y="210" width="90" height="5" rx="2.5" fill="#b7c3d2"/>
+    <rect x="82" y="223" width="62" height="5" rx="2.5" fill="#e4edf8"/>
+  </g>
+
+  <!-- server with running badge -->
+  <g>
+    <path d="M210 150 H262" stroke="#b7c3d2" stroke-width="2" stroke-dasharray="6 6"/>
+    <rect x="262" y="102" width="120" height="96" rx="14" fill="#ffffff" stroke="#247bbf" stroke-width="2"/>
+    <rect x="276" y="118" width="92" height="10" rx="5" fill="#e4edf8"/>
+    <rect x="276" y="136" width="72" height="10" rx="5" fill="#e4edf8"/>
+    <rect x="276" y="154" width="84" height="10" rx="5" fill="#e4edf8"/>
+    <circle cx="370" cy="186" r="10" fill="#247bbf"/>
+    <path d="M365.5 186 l3.5 3.5 6 -7" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M382 186 H400" stroke="#b7c3d2" stroke-width="2" stroke-dasharray="6 6"/>
+  </g>
+
+  <!-- assistant -->
+  <g>
+    <rect x="400" y="96" width="200" height="108" rx="18" fill="#ffffff" stroke="#b7c3d2" stroke-width="1.5"/>
+    <rect x="422" y="118" width="120" height="8" rx="4" fill="#b7c3d2"/>
+    <rect x="422" y="136" width="150" height="8" rx="4" fill="#e4edf8"/>
+    <rect x="422" y="154" width="96" height="8" rx="4" fill="#e4edf8"/>
+    <rect x="422" y="176" width="52" height="14" rx="7" fill="#e4edf8"/>
+    <rect x="484" y="176" width="40" height="14" rx="7" fill="#e4edf8"/>
+  </g>
+
+  <!-- grounding marks -->
+  <g stroke="#b7c3d2" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M240 236 v10"/>
+    <path d="M300 226 v20"/>
+    <path d="M360 236 v10"/>
+    <path d="M420 226 v20"/>
+    <path d="M480 236 v10"/>
+    <path d="M540 226 v20"/>
+  </g>
+</svg>

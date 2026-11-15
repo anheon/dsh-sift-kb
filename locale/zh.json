@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "本地知识库（sift）",
+    "description": "在左侧栏加一个「知识库」面板：原生检索、阅读全文、把课件或 PDF 加入知识库。sift 服务默认关闭，面板按钮或 Agent 的 sift_kb 工具都能启动；DSH 退出时结束插件自己启动的实例，用户手动启动的实例不受影响。导入资料走 courseware-to-sift 技能，确认后自动新建对话执行，源文件只读、暂存文件成功后删除。需要本机装有 sift（默认 D:\\sift-venv），且 profile 的 mcp-manager 里 sift 条目指向同一端口。",
+    "detail": "docs/DETAIL.zh.md"
+  }
+}

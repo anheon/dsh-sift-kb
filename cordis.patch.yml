@@ -1,0 +1,17 @@
+# sift 知识库守护：启动/重启本机 sift serve，并给 Agent 检索指引。
+# 可调字段（都在下方 config 里，按需增删）：
+#   host / port                 服务地址与端口，默认 127.0.0.1:8765
+#   exePath / cwd / logPath     sift 可执行文件、工作目录、追加日志
+#   siftHome                    SIFT_HOME，默认 %USERPROFILE%\.sift
+#   args                        覆盖启动参数，默认 serve --host --port
+#   autoStartOnLaunch           true = DSH 启动时自动拉起（默认 false）
+#   supervise                   true = 周期巡检并在崩溃后重启（默认 false）
+#   checkIntervalMs             巡检间隔，默认 15000
+#   startupTimeoutMs            等待端口就绪的上限，默认 180000
+#   maxRestartAttempts          巡检连续失败多少次后放弃，默认 3
+#   stopOnDshExit               true = DSH 退出/插件卸载时结束它启动的进程（默认 true）
+#   promptEnabled / promptText  是否注入检索指引，可整体替换成自己的文案
+- insert:
+    - id: sift-kb
+      name: 'dsh-sift-kb'
+      config: {}

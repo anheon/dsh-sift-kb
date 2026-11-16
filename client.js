@@ -8,7 +8,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: '@local/dsh-sift-kb',
+  id: 'dsh-sift-kb',
   factory(require) {
     const React = require('react');
     const h = React.createElement;

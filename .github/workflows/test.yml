@@ -20,4 +20,4 @@ jobs:
           node --check index.js
           node --check client.js
       - name: Tests
-        run: node --test test/config.test.mjs test/mcp.test.mjs test/routes.test.mjs test/imports.test.mjs
+        run: node --test test/config.test.mjs test/mcp.test.mjs test/routes.test.mjs test/imports.test.mjs test/client-identity.test.mjs

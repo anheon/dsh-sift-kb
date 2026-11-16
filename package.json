@@ -1,6 +1,6 @@
 {
   "name": "dsh-sift-kb",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "type": "module",
   "description": "DeepSeek Harness plugin that wires in the local sift knowledge base: opt-in server lifecycle, a sidebar panel, courseware import, and agent guidance.",
   "main": "index.js",
@@ -22,7 +22,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/config.test.mjs test/mcp.test.mjs test/routes.test.mjs test/imports.test.mjs"
+    "test": "node --test test/config.test.mjs test/mcp.test.mjs test/routes.test.mjs test/imports.test.mjs test/client-identity.test.mjs"
   },
   "keywords": [
     "dsh",

@@ -225,7 +225,7 @@ D:\sift-venv\Scripts\sift.exe
 | `autoStartOnLaunch` | `false` | DSH 启动时是否自动拉起 sift |
 | `supervise` | `false` | 是否周期巡检并在崩溃后重启 |
 | `stopOnDshExit` | `true` | DSH 退出 / 插件卸载时是否结束自己启动的实例 |
-| `allowStopExternal` | `true` | 面板「停止」是否允许停外部启动的实例 |
+| `allowStopExternal` | `false` | 设为 `true` 后，可在面板确认停止外部启动的 sift 实例 |
 | `maxRestartAttempts` | `3` | 巡检重启连续失败上限 |
 | `startupTimeoutMs` | `180000` | 等待端口就绪的上限（毫秒） |
 | `checkIntervalMs` | `15000` | 巡检间隔（毫秒） |
@@ -327,17 +327,17 @@ D:\sift-venv\Scripts\sift.exe --version
 - 插件只与本机 `127.0.0.1` 上的 sift 通信，不发送遥测。
 - 你的资料不会被插件上传；导入时资料通过 DSH 会话处理，使用哪个模型服务由你的 DSH 配置决定。
 - 安装插件等于在本机运行它的代码。只从本仓库、npm 包或你信任的来源安装。
-- 插件会结束自己启动的 sift 进程；默认不会动外部启动的实例（除非你打开 `allowStopExternal` 并在面板点停止）。
+- 插件默认只允许停止自己启动的 sift 实例。要停止外部实例，请启用 `allowStopExternal`，再在面板点击「停止」并确认。Agent 工具只停止插件启动的实例。
 
 ## 开发
 
 ```bat
 node --check index.js
 node --check client.js
-node --test test/config.test.mjs test/mcp.test.mjs test/routes.test.mjs test/imports.test.mjs
+npm test
 ```
 
-`npm test` 等价；测试需要 Node 22+。改完在插件页禁用再启用，Host 与 Client 会一起重载。
+测试需要 Node 22+。改完在插件页禁用再启用，Host 与 Client 会一起重载。
 
 ### 本地目录调试
 

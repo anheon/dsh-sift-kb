@@ -233,10 +233,10 @@ window.__ModuleLoader__.load({
           style: { ...styles.button, textDecoration: 'none' },
           href: status.url ?? `http://127.0.0.1:${status.port}/ui/`, target: '_blank', rel: 'noreferrer',
         }, '浏览界面') : null,
-        status && !status.running && status.mode !== 'starting'
+        status && !status.running && !status.pid && !['starting', 'stopping'].includes(status.mode)
           ? h('button', { type: 'button', style: { ...styles.button, ...styles.primary, opacity: busy ? 0.6 : 1 }, disabled: busy, onClick: onStart }, busy ? '启动中…' : '启动知识库')
           : null,
-        status && status.running
+        status?.mode !== 'stopping' && (status?.pid || (status?.running && status.allowStopExternal))
           ? h('button', { type: 'button', style: { ...styles.button, opacity: busy ? 0.6 : 1 }, disabled: busy, onClick: onStop }, busy ? '停止中…' : '停止')
           : null,
         error ? h('div', { style: { ...styles.error, flexBasis: '100%' } }, error) : null,
@@ -683,10 +683,15 @@ window.__ModuleLoader__.load({
       }, [running]);
 
       const transition = async action => {
+        const allowExternal = action === 'stop' && status?.adopted === true;
+        if (allowExternal && (!status.allowStopExternal || !window.confirm('停止由外部启动的 sift 服务？'))) return;
         setBusy(true);
         setActionError(null);
         try {
-          await request(`/sift-kb/${action}`, { method: 'POST' });
+          await request(`/sift-kb/${action}`, {
+            method: 'POST',
+            ...(allowExternal ? { body: JSON.stringify({ allowExternal }) } : {}),
+          });
           await refresh();
         } catch (cause) {
           setActionError(String(cause?.message ?? cause));

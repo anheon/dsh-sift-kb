@@ -1,0 +1,233 @@
+name: Publish DSH plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions: {}
+
+concurrency:
+  group: dsh-publish-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'workflow_dispatch' && github.run_id || 'main' }}
+  queue: max
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      package_name: ${{ steps.plan.outputs.package_name }}
+      version: ${{ steps.plan.outputs.version }}
+      commit: ${{ steps.plan.outputs.commit }}
+      integrity: ${{ steps.pack.outputs.integrity || steps.plan.outputs.integrity }}
+      artifact_name: ${{ steps.pack.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - name: Calculate version or recover an incomplete release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/release.mjs plan
+      - name: Set the package version for this build
+        if: steps.plan.outputs.mode == 'publish'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm.cmd version $env:VERSION --no-git-tag-version --ignore-scripts --allow-same-version
+          npm.cmd pkg set "dshReleaseCommit=$env:GITHUB_SHA"
+      - name: Run the repository checks
+        if: contains(fromJSON('["publish", "verify"]'), steps.plan.outputs.mode)
+        env:
+          PACKAGE_NAME: ${{ steps.plan.outputs.package_name }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          switch ($env:PACKAGE_NAME) {
+            'dsh-sift-kb' {
+              node --check index.js
+              node --check client.js
+              npm.cmd test
+            }
+            'dsh-session-manager-delete' {
+              npm.cmd run check:bundle
+              npm.cmd run check:host
+              npm.cmd run check:client
+            }
+            'dsh-connect-codearts' {
+              npm.cmd ci --legacy-peer-deps --no-audit --no-fund
+              npm.cmd run check
+            }
+            default { throw "Unsupported plugin: $env:PACKAGE_NAME" }
+          }
+      - name: Pack and validate the release archive
+        id: pack
+        if: contains(fromJSON('["publish", "verify"]'), steps.plan.outputs.mode)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm.cmd pack --ignore-scripts --json | Set-Content -Encoding utf8 release-pack.json
+          node .github/release.mjs verify-pack
+      - name: Smoke-test the packaged bundle
+        if: contains(fromJSON('["publish", "verify"]'), steps.plan.outputs.mode)
+        env:
+          PACKAGE_NAME: ${{ steps.plan.outputs.package_name }}
+          DSH_SMOKE_VERSION: ${{ vars.DSH_SMOKE_VERSION }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $archive = (Resolve-Path release.tgz).Path
+          $sandbox = Join-Path $env:RUNNER_TEMP 'dsh-smoke'
+          $version = $env:DSH_SMOKE_VERSION
+          if (-not $version -and $env:PACKAGE_NAME -ne 'dsh-sift-kb') { $version = '0.2.2-rc.5' }
+          if ($version) {
+            $tools = Join-Path $sandbox tools
+            npm.cmd install --prefix $tools --no-audit --no-fund "@deepseek-ai/dsh@$version" 'pnpm@10.33.0'
+            $bin = Join-Path $tools 'node_modules/.bin'
+            $env:Path = "$bin;$env:Path"
+            $env:DSH_HOME = Join-Path $sandbox home
+            dsh.cmd plugin --profile release-check add $archive
+            $composed = dsh.cmd --profile release-check --dump-config | Out-String
+            if (-not $composed.Contains($env:PACKAGE_NAME)) { throw 'DSH did not compose the plugin bundle' }
+            $profile = Join-Path $env:DSH_HOME 'profiles/release-check'
+            $profileManifest = Get-Content -Raw (Join-Path $profile 'package.json') | ConvertFrom-Json
+            if ($env:PACKAGE_NAME -notin $profileManifest.dsh.profile.bundles) { throw 'DSH did not register the plugin bundle' }
+          } else {
+            # Sift's published engines.dsh range excludes the available CLI prereleases.
+            Write-Output '::notice::Install and import smoke only. Set DSH_SMOKE_VERSION once a compatible CLI is available.'
+            $profile = Join-Path $sandbox npm-install
+            npm.cmd install --prefix $profile --ignore-scripts --no-audit --no-fund $archive
+          }
+          Push-Location $profile
+          try { node --input-type=module -e 'await import(process.argv[1])' $env:PACKAGE_NAME }
+          finally { Pop-Location }
+      - name: Store the verified tarball
+        if: steps.plan.outputs.mode == 'publish'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.pack.outputs.artifact_name }}
+          path: release.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: needs.verify.outputs.mode == 'publish' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.3'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.verify.outputs.artifact_name }}
+      - name: Publish the verified archive via OIDC
+        env:
+          PACKAGE_NAME: ${{ needs.verify.outputs.package_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          INTEGRITY: ${{ needs.verify.outputs.integrity }}
+          COMMIT: ${{ needs.verify.outputs.commit }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { createHash } = require('node:crypto');
+          const { readFileSync } = require('node:fs');
+          const { spawnSync } = require('node:child_process');
+          const { setTimeout } = require('node:timers/promises');
+          const { PACKAGE_NAME, VERSION, COMMIT, INTEGRITY } = process.env;
+          const url = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/${VERSION}`;
+
+          async function checkRegistry() {
+            const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+            if (response.status === 404) return false;
+            if (!response.ok) throw new Error(`npm returned HTTP ${response.status}`);
+            const manifest = await response.json();
+            if (manifest.dist?.integrity !== INTEGRITY || manifest.dshReleaseCommit !== COMMIT) {
+              throw new Error(`npm ${PACKAGE_NAME}@${VERSION} conflicts with the verified archive`);
+            }
+            return true;
+          }
+
+          async function publish() {
+            const actual = `sha512-${createHash('sha512').update(readFileSync('release.tgz')).digest('base64')}`;
+            if (actual !== INTEGRITY) throw new Error('Downloaded artifact integrity mismatch');
+            if (await checkRegistry()) return;
+            const result = spawnSync('npm', ['publish', './release.tgz', '--access', 'public', '--ignore-scripts'], { stdio: 'inherit' });
+            if (result.error) throw result.error;
+            for (let attempt = 0; attempt < 12; attempt++) {
+              if (await checkRegistry()) return;
+              await setTimeout(5000);
+            }
+            throw new Error(`npm publish exited ${result.status}. The expected package is not visible in the registry.`);
+          }
+
+          publish().catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
+
+  release:
+    if: always() && !cancelled() && needs.verify.result == 'success' && (needs.publish.result == 'success' || needs.verify.outputs.mode == 'recover') && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Attach the npm tarball and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_NAME: ${{ needs.verify.outputs.package_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          INTEGRITY: ${{ needs.verify.outputs.integrity }}
+          COMMIT: ${{ needs.verify.outputs.commit }}
+        shell: bash
+        run: |
+          TAG="v$VERSION"
+          FILE="$RUNNER_TEMP/$PACKAGE_NAME-$VERSION.tgz"
+          git merge-base --is-ancestor "$COMMIT" HEAD
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$COMMIT"
+          fi
+          npm pack "$PACKAGE_NAME@$VERSION" --ignore-scripts --registry https://registry.npmjs.org --pack-destination "$RUNNER_TEMP"
+          node --input-type=module - "$FILE" <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          const digest = `sha512-${createHash('sha512').update(readFileSync(process.argv[2])).digest('base64')}`;
+          if (digest !== process.env.INTEGRITY) throw new Error('npm archive integrity mismatch');
+          NODE
+          if gh release view "$TAG" --json isDraft,assets > "$RUNNER_TEMP/dsh-release.json"; then
+            if jq -e --arg name "$(basename "$FILE")" '.assets | any(.name == $name)' "$RUNNER_TEMP/dsh-release.json" > /dev/null; then
+              mkdir -p "$RUNNER_TEMP/dsh-release-asset"
+              gh release download "$TAG" --pattern "$(basename "$FILE")" --dir "$RUNNER_TEMP/dsh-release-asset"
+              cmp "$FILE" "$RUNNER_TEMP/dsh-release-asset/$(basename "$FILE")"
+            else
+              gh release upload "$TAG" "$FILE"
+            fi
+            if jq -e '.isDraft' "$RUNNER_TEMP/dsh-release.json" > /dev/null; then
+              gh release edit "$TAG" --draft=false
+            fi
+          else
+            gh release create "$TAG" "$FILE" --target "$COMMIT" --generate-notes --title "$TAG"
+          fi

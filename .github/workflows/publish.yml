@@ -59,6 +59,7 @@ jobs:
           PACKAGE_NAME: ${{ steps.plan.outputs.package_name }}
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
+          node --test .github/release.test.mjs
           switch ($env:PACKAGE_NAME) {
             'dsh-sift-kb' {
               node --check index.js
@@ -130,8 +131,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read
       id-token: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24.22.3'
@@ -147,41 +152,7 @@ jobs:
           INTEGRITY: ${{ needs.verify.outputs.integrity }}
           COMMIT: ${{ needs.verify.outputs.commit }}
         shell: bash
-        run: |
-          node <<'NODE'
-          const { createHash } = require('node:crypto');
-          const { readFileSync } = require('node:fs');
-          const { spawnSync } = require('node:child_process');
-          const { setTimeout: sleep } = require('node:timers/promises');
-          const { PACKAGE_NAME, VERSION, COMMIT, INTEGRITY } = process.env;
-          const url = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/${VERSION}`;
-
-          async function checkRegistry() {
-            const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-            if (response.status === 404) return false;
-            if (!response.ok) throw new Error(`npm returned HTTP ${response.status}`);
-            const manifest = await response.json();
-            if (manifest.dist?.integrity !== INTEGRITY || manifest.dshReleaseCommit !== COMMIT) {
-              throw new Error(`npm ${PACKAGE_NAME}@${VERSION} conflicts with the verified archive`);
-            }
-            return true;
-          }
-
-          async function publish() {
-            const actual = `sha512-${createHash('sha512').update(readFileSync('release.tgz')).digest('base64')}`;
-            if (actual !== INTEGRITY) throw new Error('Downloaded artifact integrity mismatch');
-            if (await checkRegistry()) return;
-            const result = spawnSync('npm', ['publish', './release.tgz', '--access', 'public', '--ignore-scripts'], { stdio: 'inherit' });
-            if (result.error) throw result.error;
-            for (let attempt = 0; attempt < 12; attempt++) {
-              if (await checkRegistry()) return;
-              await sleep(5000);
-            }
-            throw new Error(`npm publish exited ${result.status}. The expected package is not visible in the registry.`);
-          }
-
-          publish().catch(error => { console.error(error); process.exitCode = 1; });
-          NODE
+        run: node .github/release.mjs publish
 
   release:
     if: always() && !cancelled() && needs.verify.result == 'success' && (needs.publish.result == 'success' || needs.verify.outputs.mode == 'recover') && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')

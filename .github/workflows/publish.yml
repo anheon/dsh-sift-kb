@@ -152,7 +152,7 @@ jobs:
           const { createHash } = require('node:crypto');
           const { readFileSync } = require('node:fs');
           const { spawnSync } = require('node:child_process');
-          const { setTimeout } = require('node:timers/promises');
+          const { setTimeout: sleep } = require('node:timers/promises');
           const { PACKAGE_NAME, VERSION, COMMIT, INTEGRITY } = process.env;
           const url = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/${VERSION}`;
 
@@ -175,7 +175,7 @@ jobs:
             if (result.error) throw result.error;
             for (let attempt = 0; attempt < 12; attempt++) {
               if (await checkRegistry()) return;
-              await setTimeout(5000);
+              await sleep(5000);
             }
             throw new Error(`npm publish exited ${result.status}. The expected package is not visible in the registry.`);
           }

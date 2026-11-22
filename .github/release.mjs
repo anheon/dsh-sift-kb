@@ -1,6 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync, renameSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const { GITHUB_OUTPUT, GITHUB_REPOSITORY, GITHUB_SHA, GH_TOKEN } = process.env;
@@ -35,6 +37,10 @@ function isAncestor(base, head) {
 
 function output(values) {
   appendFileSync(GITHUB_OUTPUT, Object.entries(values).map(([key, value]) => `${key}=${value}\n`).join(''));
+}
+
+export function releaseNeedsRecovery(release, expectedAsset) {
+  return !release || release.draft || !release.assets?.some(asset => asset.name === expectedAsset);
 }
 
 async function plan() {
@@ -79,7 +85,8 @@ async function plan() {
     if (release.status !== 404 && !release.ok) {
       throw new Error(`GitHub Release lookup returned HTTP ${release.status}`);
     }
-    if (release.status === 404 || (await release.json()).draft) {
+    const publishedRelease = release.status === 404 ? null : await release.json();
+    if (releaseNeedsRecovery(publishedRelease, `${pkg.name}-${latest}.tgz`)) {
       output({ mode: 'recover', version: latest, commit: baseline, integrity: published.dist.integrity });
       console.log(`Finishing GitHub Release v${latest} from the verified npm publication.`);
       return;
@@ -127,6 +134,93 @@ function verifyPack() {
   output({ integrity, artifact_name: `dsh-package-${process.env.GITHUB_RUN_ATTEMPT}` });
 }
 
-if (process.argv[2] === 'plan') await plan();
-else if (process.argv[2] === 'verify-pack') verifyPack();
-else throw new Error('Expected plan or verify-pack');
+async function checkVersion(publication, request, timeoutMs) {
+  const { name, version, integrity, commit } = publication;
+  const url = `${registry}/${encodeURIComponent(name)}/${version}`;
+  let response;
+  try {
+    response = await request(url, {
+      headers: { 'Cache-Control': 'no-cache' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return { retry: error };
+  }
+  if (response.status === 404) return { present: false };
+  if (!response.ok) {
+    const error = new Error(`npm registry returned HTTP ${response.status}`);
+    if (response.status === 408 || response.status === 429 || response.status >= 500) {
+      return { retry: error, retryAfter: response.headers.get('retry-after') };
+    }
+    throw error;
+  }
+
+  let manifest;
+  try {
+    manifest = await response.json();
+  } catch (error) {
+    return { retry: error };
+  }
+  if (manifest?.dist?.integrity !== integrity || manifest?.dshReleaseCommit !== commit) {
+    throw new Error(`npm ${name}@${version} conflicts with the verified archive`);
+  }
+  return { present: true };
+}
+
+function retryDelay(retryAfter, now) {
+  if (!retryAfter) return 5_000;
+  const seconds = Number(retryAfter);
+  const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - now;
+  return Number.isFinite(delay) ? Math.max(5_000, delay) : 5_000;
+}
+
+export async function waitForRegistry(publication, {
+  waitForMissing = false,
+  timeoutMs,
+  request = fetch,
+  now = Date.now,
+  delay = sleep,
+}) {
+  const deadline = now() + timeoutMs;
+  let lastResult;
+  for (let remaining = timeoutMs; remaining > 0; remaining = deadline - now()) {
+    lastResult = await checkVersion(publication, request, Math.min(15_000, remaining));
+    if (lastResult.present || (!waitForMissing && lastResult.present === false)) return lastResult.present;
+    const current = now();
+    const afterRequest = deadline - current;
+    if (afterRequest > 0) await delay(Math.min(retryDelay(lastResult.retryAfter, current), afterRequest));
+  }
+  if (lastResult?.retry) throw new Error('npm registry could not confirm the package version', { cause: lastResult.retry });
+  return false;
+}
+
+async function publish() {
+  const publication = {
+    name: process.env.PACKAGE_NAME,
+    version: process.env.VERSION,
+    integrity: process.env.INTEGRITY,
+    commit: process.env.COMMIT,
+  };
+  const actual = `sha512-${createHash('sha512').update(readFileSync('release.tgz')).digest('base64')}`;
+  if (actual !== publication.integrity) throw new Error('Downloaded artifact integrity mismatch');
+  if (await waitForRegistry(publication, { timeoutMs: 45_000 })) return;
+
+  const result = spawnSync('npm', ['publish', './release.tgz', '--access', 'public', '--ignore-scripts'], {
+    stdio: 'inherit',
+    timeout: 180_000,
+  });
+  if (result.error && result.error.code !== 'ETIMEDOUT') throw result.error;
+  const timeoutMs = result.status === 0 ? 300_000 : 45_000;
+  console.log(`Waiting up to ${timeoutMs / 1000} seconds for npm registry confirmation.`);
+  if (await waitForRegistry(publication, { waitForMissing: true, timeoutMs })) return;
+
+  const outcome = result.error?.message ?? `exit status ${result.status ?? result.signal}`;
+  throw new Error(`npm publish finished with ${outcome}. The verified package version is not yet visible in the registry.`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv[2] === 'plan') await plan();
+  else if (process.argv[2] === 'verify-pack') verifyPack();
+  else if (process.argv[2] === 'publish') await publish();
+  else throw new Error('Expected plan, verify-pack, or publish');
+}

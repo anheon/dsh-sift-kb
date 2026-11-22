@@ -101,8 +101,8 @@ jobs:
             $env:Path = "$bin;$env:Path"
             $env:DSH_HOME = Join-Path $sandbox home
             dsh.cmd plugin --profile release-check add $archive
-            $composed = dsh.cmd --profile release-check --dump-config | Out-String
-            if (-not $composed.Contains($env:PACKAGE_NAME)) { throw 'DSH did not compose the plugin bundle' }
+            $schema = dsh.cmd --profile release-check --dump-config-schema | Out-String
+            if (-not $schema.Contains($env:PACKAGE_NAME)) { throw 'DSH did not load the plugin bundle' }
             $profile = Join-Path $env:DSH_HOME 'profiles/release-check'
             $profileManifest = Get-Content -Raw (Join-Path $profile 'package.json') | ConvertFrom-Json
             if ($env:PACKAGE_NAME -notin $profileManifest.dsh.profile.bundles) { throw 'DSH did not register the plugin bundle' }
@@ -111,10 +111,10 @@ jobs:
             Write-Output '::notice::Install and import smoke only. Set DSH_SMOKE_VERSION once a compatible CLI is available.'
             $profile = Join-Path $sandbox npm-install
             npm.cmd install --prefix $profile --ignore-scripts --no-audit --no-fund $archive
+            Push-Location $profile
+            try { node --input-type=module -e 'await import(process.argv[1])' $env:PACKAGE_NAME }
+            finally { Pop-Location }
           }
-          Push-Location $profile
-          try { node --input-type=module -e 'await import(process.argv[1])' $env:PACKAGE_NAME }
-          finally { Pop-Location }
       - name: Store the verified tarball
         if: steps.plan.outputs.mode == 'publish'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
